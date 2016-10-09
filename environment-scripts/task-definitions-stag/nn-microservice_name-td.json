@@ -1,0 +1,56 @@
+{
+  "containerDefinitions": [
+    {
+      "volumesFrom": [],
+      "memory": 384,
+      "essential": true,
+      "portMappings": [
+        {
+          "hostPort": 8097,
+          "containerPort": 8080
+        }
+      ],
+      "mountPoints": [
+        {
+            "containerPath": "/var/log/microserivce_name",
+            "sourceVolume": "awseb-logs-microserivce_name"
+        }
+      ],
+      "name": "microserivce_name",
+      "environment": [
+        {
+            "name": "SPRING_PROFILES_ACTIVE",
+            "value": "DEPLOYMENT_ENV"
+        },
+        {
+          "name": "SERVICE_NAME",
+          "value": "microserivce_name"
+        },
+        {
+            "name": "MICROSERVICE_02_URL",
+            "value": "http://microserivce_name:8080"
+        }
+      ],
+      "image": "projectdockerhub/microserivce_name:VERSION",
+      "cpu": 100,
+      "logConfiguration": {
+        "logDriver": "fluentd",
+        "options": {
+          "fluentd-async-connect": "true",
+          "fluentd-address": "fluent-aggregator.internal.DEPLOYMENT_ENV.project:24224",
+          "tag": "docker.api.{{.Name}}"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "host":
+        {
+          "sourcePath": "/var/log/containers/microserivce_name"
+        },
+      "name": "awseb-logs-microserivce_name"
+    }
+  ],
+  "family": "microserivce_name-td-DEPLOYMENT_ENV"
+}

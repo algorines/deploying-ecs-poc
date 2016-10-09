@@ -1,0 +1,806 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation template for stag environment",
+    "Mappings": {
+        "StagServerAmiMap": {
+            "eu-west-1": {
+                "AMI": "ami-a10897d6"
+            },
+            "us-east-1": {
+                "AMI": "ami-1ecae776"
+            },
+            "us-west-2": {
+                "AMI": "ami-e7527ed7"
+            }
+        },
+        "FluentAmiMap": {
+            "eu-west-1": {
+                "AMI": "ami-a10897d6"
+            },
+            "us-east-1": {
+                "AMI": "ami-1ecae776"
+            },
+            "us-west-2": {
+                "AMI": "ami-e7527ed7"
+            }
+        },
+        "DcMap": {
+            "eu-west-1": {
+                "Value": "eu1"
+            },
+            "us-east-1": {
+                "Value": "us1"
+            },
+            "us-west-2": {
+                "Value": "us2"
+            }
+        }
+    },
+    "Parameters": {
+        "SpotPriceStagServer" : {
+            "Type" : "Number",
+            "Description" : "Maximum spot price to bid in USD (e.g.: 0.32).",
+            "Default" : "0.07"
+        },
+        "SpotPriceFluent" : {
+            "Type" : "Number",
+            "Description" : "Maximum spot price to bid in USD (e.g.: 0.32).",
+            "Default" : "0.07"
+        },
+        "FluentInstanceType": {
+            "Type": "String",
+            "Description": "ECS instance type",
+            "Default": "t2.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "ServerInstanceType": {
+            "Type": "String",
+            "Description": "Stag Server EC2 instance type",
+            "Default": "t2.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the EC2 instances"
+        },
+        "InstanceName": {
+            "Type": "String",
+            "Description": "Name for EC2 Instance",
+            "Default": "ECS Instance"
+        },
+        "SourceCidr": {
+            "Type": "String",
+            "Description": "Optional - CIDR/IP range for ECS instance outside access - defaults to 0.0.0.0/0",
+            "Default": "0.0.0.0/0"
+        },
+        "VPC": {
+            "Type": "AWS::EC2::VPC::Id",
+            "Description": "The VPC Id where the instances will be deployed into."
+        },
+        "SubnetId": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The Subnet Id where the instances will be deployed into. Must be a subnet in the the same VPC as the VPC Id input parameter."
+        },
+        "AZ": {
+            "Type": "AWS::EC2::AvailabilityZone::Name",
+            "Description": "The Availability Zone of the Subnet. Must be the same Availabile Zone as the SubnetId parameter."
+        },
+        "AmazonDnsIp": {
+            "Type": "String",
+            "Description": "The IP address of the VPC DNS service running on a reserved IP address at the base of the VPC network range \"plus two\". ",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "Default": "172.16.0.2"
+        },
+    },
+    "Resources": {
+        "CommonSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ECS Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "2375",
+                        "ToPort": "2375",
+                        "CidrIp": "172.16.0.0/24"
+                    }
+                ]
+            }
+        },
+        "FluentAgentSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ECS Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "24224",
+                        "ToPort": "24224",
+                        "CidrIp": "172.16.0.0/12"
+                    }
+                ]
+            }
+        },
+        "StagRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecs:CreateCluster",
+                                        "ecs:DeregisterContainerInstance",
+                                        "ecs:DiscoverPollEndpoint",
+                                        "ecs:Poll",
+                                        "ecs:RegisterContainerInstance",
+                                        "ecs:StartTelemetrySession",
+                                        "ecs:Submit*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "ec2:DescribeInstances",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                      "s3:Get*",
+                                      "s3:List*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "FluentRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "ec2:DescribeInstances",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "es:*",
+                                    "Resource": "*",
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                      "s3:Get*",
+                                      "s3:List*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "StagInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "StagRole"
+                    }
+                ]
+            }
+        },
+        "FluentInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "FluentRole"
+                    }
+                ]
+            }
+        },
+        "EcsFluentAggregator": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "InstallAndRun": [
+                            "Install",
+                            "Configure",
+                            "StartContainers"
+                        ]
+                    },
+                    "Install": {
+                        "packages": {
+                            "yum": {
+                              "docker": [],
+                              "aws-cli": []
+                            }
+                        },
+                        "files": {
+                            "/etc/sysconfig/docker": {
+                                "content": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "OPTIONS='--dns 172.17.0.1 --dns",
+                                            {
+                                              "Ref": "AmazonDnsIp"
+                                            },
+                                            "'"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "commands": {
+                            "01_update_es_config": {
+                              "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                          "aws --region eu-west-1 es update-elasticsearch-domain-config --domain-name project-es --access-policies '{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"es:*\",\"Principal\":\"*\", \"Effect\": \"Allow\", \"Condition\": {\"IpAddress\" :{\"aws:SourceIp\":[\"'$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)'/32\", \"52.50.147.92/32\" ]}}}]}'"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_add_user_to_docker_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "usermod -a -G docker ec2-user"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03_restart_docker": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/sbin/service docker restart"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04_pause_to_wait_for_docker_restart": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sleep 5"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "11_add_file_dockercfg": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "aws s3 cp s3://project-docker-conf-stag/config.json /root/.docker/config.json"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "12_pull_fluent_image": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker pull projectdockerhub/fluentd-aggregator:stag"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "StartContainers": {
+                        "commands": {
+                            "03_start_fluentd_docker_container": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "docker run -d -p 24224:24224 --restart=always",
+                                            "-v /var/log/containers:/var/log/containers",
+                                            "--name fluentd-aggregator projectdockerhub/fluentd-aggregator:stag"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "FluentAmiMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "FluentInstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "FluentInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "FluentAgentSecurityGroup"
+                            },
+                            {
+                                "Ref": "CommonSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "PrivateIpAddress": "172.16.0.251",
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "fluentd-aggregator"
+                    },
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsFluentAggregator ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsFluentAggregator ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "StagServer01": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "InstallAndRun": [
+                            "Install",
+                            "Configure",
+                            "StartContainers"
+                        ]
+                    },
+                    "Install": {
+                        "packages": {
+                            "yum": {
+                                "git": [],
+                                "docker": [],
+                                "aws-cli": []
+                            }
+                        },
+                        "files": {
+                            "/etc/sysconfig/docker": {
+                                "content": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "OPTIONS='--dns 172.17.0.1 --dns",
+                                            {
+                                              "Ref": "AmazonDnsIp"
+                                            },
+                                            "-H unix:///var/run/docker.sock -H tcp://0.0.0.0:2375'"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/root/.gitconfig": {
+                                "content": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "[url \"https://token_github@github.com/project/\"]	insteadOf = https://github.com/project/"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "docker": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "commands": {
+                            "03_add_user_to_docker_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "usermod -a -G docker ec2-user"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04_install_docker_compose": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "curl -L https://github.com/docker/compose/releases/download/1.8.0/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05_change_permissions": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "chmod +x /usr/local/bin/docker-compose"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "07_git_clone_repository": {
+                              "command": {
+                                "Fn::Join": [
+                                  "",
+                                  [
+                                    "sudo git clone https://github.com/project-labs/cluster-management.git /home/ec2-user/cluster"
+                                  ]
+                                ]
+                              }
+                            },
+                            "08_add_file_dockercfg": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "aws s3 cp s3://project-docker-conf-stag/config.json /root/.docker/config.json"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "StartContainers": {
+                        "commands": {
+                            "01_set_work_dir": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "cd /home/ec2-user/cluster/ecs/compose"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_start_Stag_docker_container": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "bash /home/ec2-user/cluster/ecs/compose/deploy-compose.bash stag latest /home/ec2-user/cluster/ecs/compose"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "StagServerAmiMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "ServerInstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "StagInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "CommonSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "PrivateIpAddress": "172.16.0.252",
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "StagServer"
+                    },
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource StagServer01 ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource StagServer01 ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT15M"
+                }
+            }
+        },
+    }
+}

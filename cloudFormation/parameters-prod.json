@@ -1,0 +1,27 @@
+[
+  {
+	"ParameterKey": "SubnetId",
+	"ParameterValue": "subnet-b42fc1d0"
+  },
+  {
+	"ParameterKey": "VPC",
+	"ParameterValue": "vpc-2b36324e"
+  },
+  {
+	"ParameterKey": "AZ",
+	"ParameterValue": "eu-west-1b"
+  },
+  {
+	"ParameterKey": "KeyName",
+	"ParameterValue": "DEPLOYMENT_ENV"
+  },
+  {
+	"ParameterKey": "EcsClusterName",
+	"ParameterValue": "cluster-DEPLOYMENT_ENV"
+  },
+  {
+  "ParameterKey": "ClusterSize",
+  "ParameterValue": "4"
+  }
+
+]

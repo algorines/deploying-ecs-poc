@@ -1,0 +1,48 @@
+{
+  "containerDefinitions": [
+    {
+      "volumesFrom": [],
+      "memory": 768,
+      "essential": true,
+      "portMappings": [
+        {
+          "hostPort": 8083,
+          "containerPort": 8080
+        }
+      ],
+      "mountPoints": [
+        {
+            "containerPath": "/var/log/microserivce_name",
+            "sourceVolume": "awseb-logs-microserivce_name"
+        }
+      ],
+      "name": "microserivce_name",
+      "environment": [
+        {
+            "name": "NODE_ENV",
+            "value": "DEPLOYMENT_ENV"
+        },
+        {
+          "name": "SERVICE_NAME",
+          "value": "microserivce_name"
+        },
+        {
+            "name": "MICROSERVICE_01_URL",
+            "value": "http://1-alb-DEPLOYMENT_ENV.internal.DEPLOYMENT_ENV.project:8082"
+        }
+      ],
+      "image": "projectdockerhub/microserivce_name:VERSION",
+      "cpu": 150
+    }
+  ],
+  "volumes": [
+    {
+      "host":
+        {
+          "sourcePath": "/var/log/containers/microserivce_name"
+        },
+      "name": "awseb-logs-microserivce_name"
+    }
+  ],
+  "family": "microserivce_name-td-DEPLOYMENT_ENV"
+}

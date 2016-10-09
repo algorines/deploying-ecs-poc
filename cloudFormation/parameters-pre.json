@@ -1,0 +1,31 @@
+[
+  {
+	"ParameterKey": "SubnetId",
+	"ParameterValue": "subnet-2c92305a"
+  },
+  {
+	"ParameterKey": "VPC",
+	"ParameterValue": "vpc-b0aef7d5"
+  },
+  {
+	"ParameterKey": "AZ",
+	"ParameterValue": "eu-west-1c"
+  },
+  {
+	"ParameterKey": "KeyName",
+	"ParameterValue": "DEPLOYMENT_ENV"
+  },
+  {
+	"ParameterKey": "EcsClusterName",
+	"ParameterValue": "cluster-DEPLOYMENT_ENV"
+  },
+  {
+  "ParameterKey": "ClusterSize",
+  "ParameterValue": "3"
+  },
+  {
+  "ParameterKey": "SpotPriceEcs",
+  "ParameterValue": "0.1"
+  }
+
+]

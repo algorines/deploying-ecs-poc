@@ -1,0 +1,31 @@
+[
+  {
+	"ParameterKey": "SubnetId",
+	"ParameterValue": "subnet-6ae31f0e"
+  },
+  {
+	"ParameterKey": "VPC",
+	"ParameterValue": "vpc-37a8a252"
+  },
+  {
+	"ParameterKey": "AZ",
+	"ParameterValue": "eu-west-1b"
+  },
+  {
+	"ParameterKey": "KeyName",
+	"ParameterValue": "stag"
+  },
+  {
+  "ParameterKey": "InstanceName",
+  "ParameterValue": "ECS Instance-stag"
+  },
+  {
+  "ParameterKey": "SpotPriceStagServer",
+  "ParameterValue": "0.1"
+  },
+  {
+  "ParameterKey": "SpotPriceFluent",
+  "ParameterValue": "0.1"
+  }
+
+]

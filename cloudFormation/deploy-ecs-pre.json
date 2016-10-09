@@ -1,0 +1,535 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation template for ecs",
+    "Mappings": {
+        "EcsNodeAmiMap": {
+            "eu-west-1": {
+                "AMI": "ami-078df974"
+            },
+            "eu-central-1": {
+                "AMI": "ami-341efb5b"
+            }
+        },
+        "DcMap": {
+            "eu-west-1": {
+                "Value": "eu1"
+            },
+            "eu-central-1": {
+                "Value": "eu2"
+            }
+        }
+    },
+    "Parameters": {
+        "SpotPriceEcs" : {
+            "Type" : "Number",
+            "Description" : "Maximum spot price to bid in USD (e.g.: 0.32).",
+            "Default" : "0.07"
+        },
+        "EcsInstanceType": {
+            "Type": "String",
+            "Description": "ECS instance type",
+            "Default": "m4.large",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the EC2 instances"
+        },
+        "ClusterSize": {
+            "Type": "Number",
+            "Description": "Expected size of the ECS cluster",
+            "Default": "1"
+        },
+        "EcsClusterName": {
+            "Type": "String",
+            "Description": "ECS Cluster Name",
+            "Default": "default"
+        },
+        "SourceCidr": {
+            "Type": "String",
+            "Description": "Optional - CIDR/IP range for ECS instance outside access - defaults to 0.0.0.0/0",
+            "Default": "0.0.0.0/0"
+        },
+        "VPC": {
+            "Type": "AWS::EC2::VPC::Id",
+            "Description": "The VPC Id where the instances will be deployed into."
+        },
+        "SubnetId": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The Subnet Id where the instances will be deployed into. Must be a subnet in the the same VPC as the VPC Id input parameter."
+        },
+        "AZ": {
+            "Type": "AWS::EC2::AvailabilityZone::Name",
+            "Description": "The Availability Zone of the Subnet. Must be the same Availabile Zone as the SubnetId parameter."
+        },
+        "AmazonDnsIp": {
+            "Type": "String",
+            "Description": "The IP address of the VPC DNS service running on a reserved IP address at the base of the VPC network range \"plus two\". ",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "Default": "172.16.0.2"
+        }
+    },
+    "Resources": {
+        "HostSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Host Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "HostSG"
+                    }
+                ]
+            }
+        },
+        "InternalELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Internal ELB Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "sg-InternalELB-pre"
+                    }
+                ]
+            }
+        },
+        "HostSecurityGroupIngressELBs": {
+            "DependsOn": [
+                "HostSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "HostSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8080",
+                "ToPort": "8097",
+                "SourceSecurityGroupId": {
+                    "Ref": "InternalELBSecurityGroup"
+                }
+            }
+        },
+        "InternalELBSecurityGroupIngressFromHosts": {
+            "DependsOn": [
+                "InternalELBSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "InternalELBSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "HostSecurityGroup"
+                }
+            }
+        },
+        "InternalELBSecurityGroupIngressFromExtELB": {
+            "DependsOn": [
+                "InternalELBSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "InternalELBSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8080",
+                "ToPort": "8080",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+        "CommonSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ECS Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "sg-common"
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "EcsInstanceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecs:CreateCluster",
+                                        "ecs:DeregisterContainerInstance",
+                                        "ecs:DiscoverPollEndpoint",
+                                        "ecs:Poll",
+                                        "ecs:RegisterContainerInstance",
+                                        "ecs:Submit*",
+                                        "ecs:StartTelemetrySession"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "ec2:DescribeInstances",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                      "s3:Get*",
+                                      "s3:List*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "EcsInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "EcsInstanceRole"
+                    }
+                ]
+            }
+        },
+        "EcsInstanceLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "InstallAndRun": [
+                            "Install",
+                            "Configure"
+                        ]
+                    },
+                    "Install": {
+                        "packages": {
+                            "yum": {
+                                "aws-cli": []
+                            }
+                        },
+                        "files": {
+                            "/etc/ecs/ecs.config": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "ECS_CLUSTER=",
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "commands": {
+                            "01_add_user_to_docker_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "usermod -a -G docker ec2-user"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_restart_docker": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/sbin/service docker restart"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03_pause_to_wait_for_docker_restart": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sleep 5"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04_start_ecs_if_not_running": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[[ $(/sbin/status ecs) =~ \"running\" ]] || /sbin/start ecs"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05_cp_ecs_config_from_S3": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "aws s3 cp s3://project-docker-conf-DEPLOYMENT_ENV/ecs.config /etc/ecs/ecs.config"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06_stop_ecs": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/sbin/stop ecs"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "07_start_ecs": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/sbin/start ecs"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "EcsNodeAmiMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "EcsInstanceType"
+                },
+                "SpotPrice": { "Ref": "SpotPriceEcs" },
+                "AssociatePublicIpAddress": true,
+                "IamInstanceProfile": {
+                    "Ref": "EcsInstanceProfile"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "HostSecurityGroup"
+                    },
+                    {
+                        "Ref": "CommonSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "BlockDeviceMappings" : [
+                  {
+                    "DeviceName" : "/dev/xvda",
+                    "Ebs" : {
+                       "VolumeType" : "gp2",
+                       "DeleteOnTermination" : "false",
+                       "VolumeSize" : "20"
+                    }
+                  }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsInstanceLc ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsInstanceAsg ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "EcsInstanceAsg": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    {
+                        "Ref": "AZ"
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "SubnetId"
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "EcsInstanceLc"
+                },
+                "MinSize": {
+                    "Ref": "ClusterSize"
+                },
+                "MaxSize": {
+                    "Ref": "ClusterSize"
+                },
+                "DesiredCapacity": {
+                    "Ref": "ClusterSize"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        },
+                        "PropagateAtLaunch": "true"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "ECS Instance",
+                        "PropagateAtLaunch": "true"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "EcsInstanceAsgName": {
+            "Description": "Auto Scaling Group Name for ECS Instances",
+            "Value": {
+                "Ref": "EcsInstanceAsg"
+            }
+        }
+    }
+}
